@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { validateFen } from 'chess.js';
 import { START_FEN, castlingFor, parseFen, toFen, type Position } from './chess/fen';
 import { describeLine, playMove } from './chess/moves';
 import { useCloudEval } from './hooks/useCloudEval';
 import type { CloudEvalPv } from './lichess/cloudEval';
+import { readUrlFen, writeUrlFen } from './urlPosition';
 import { Board } from './components/Board';
 import { EngineLines } from './components/EngineLines';
 import { FenPanel } from './components/FenPanel';
@@ -38,6 +39,15 @@ function describeAdvantage(cp: number) {
   return `${side} is winning`;
 }
 
+/** The FEN in the URL when it holds a legal position, otherwise the starting position. */
+function initialFen() {
+  const parsed = parseFen(readUrlFen() ?? '');
+  return parsed && validateFen(toFen(parsed)).ok ? toFen(parsed) : START_FEN;
+}
+
+/** How a position change shows up in the browser history. */
+type HistoryMode = 'push' | 'replace' | 'none';
+
 function formatNodes(knodes: number) {
   if (knodes >= 1e6) return `${(knodes / 1e6).toFixed(1)}B`;
   if (knodes >= 1e3) return `${Math.round(knodes / 1e3)}M`;
@@ -46,8 +56,9 @@ function formatNodes(knodes: number) {
 
 export default function App() {
   const [tab, setTab] = useState<'fen' | 'edit'>('edit');
-  const [pos, setPos] = useState<Position>(() => parseFen(START_FEN)!);
-  const [fenInput, setFenInput] = useState(START_FEN);
+  const [openedWith] = useState(initialFen);
+  const [pos, setPos] = useState<Position>(() => parseFen(openedWith)!);
+  const [fenInput, setFenInput] = useState(openedWith);
   const [inputError, setInputError] = useState('');
   const [flipped, setFlipped] = useState(false);
   const [selLine, setSelLine] = useState(0);
@@ -58,11 +69,15 @@ export default function App() {
 
   const fen = toFen(pos);
 
-  useEffect(() => analyze(START_FEN), [analyze]);
+  useEffect(() => analyze(openedWith), [analyze, openedWith]);
 
-  /** Shows a new position; `delay` is the analysis debounce, or null to not analyze at all. */
-  const applyPos = (next: Position, delay: number | null) => {
+  /**
+   * Shows a new position; `delay` is the analysis debounce, or null to not analyze at all.
+   * `history` says how the URL follows: a new entry, an amended one, or untouched (when the URL led here).
+   */
+  const applyPos = (next: Position, delay: number | null, history: HistoryMode = 'push') => {
     const nextFen = toFen(next);
+    if (history !== 'none') writeUrlFen(nextFen, history);
     setPos(next);
     setFenInput(nextFen);
     setInputError('');
@@ -76,8 +91,20 @@ export default function App() {
   const editPos = (patch: Partial<Position>, delay: number | null = MOVE_DEBOUNCE_MS) => {
     const next = { ...pos, ...patch, ep: '-' };
     next.castling = castlingFor(next.board);
-    applyPos(next, delay);
+    applyPos(next, delay, 'replace');
   };
+
+  // Back and forward buttons, or a hand-edited hash, load the position the URL now points at.
+  const applyRef = useRef(applyPos);
+  applyRef.current = applyPos;
+  useEffect(() => {
+    const onPopState = () => {
+      const parsed = parseFen(readUrlFen() ?? START_FEN) ?? parseFen(START_FEN)!;
+      applyRef.current(parsed, 0, 'none');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const loadFen = (text: string) => {
     const parsed = parseFen(text);

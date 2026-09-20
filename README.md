@@ -14,6 +14,8 @@ install and no backend to run — the app is a static page that talks to Lichess
 - **Top engine lines** – up to three principal variations in standard notation with search depth and node count.
   Click a line to highlight its first move with an arrow on the board.
 - **Copy FEN** and **Open on Lichess** to continue the analysis with a full engine.
+- **Position in the URL** – the current FEN sits in the address bar, so a reload keeps it, the link can be shared,
+  and the browser's back button steps through the moves you played.
 
 ## Good to know
 
@@ -68,6 +70,7 @@ src/
   chess/moves.ts          legal moves and engine line → notation, via chess.js
   lichess/cloudEval.ts    cloud eval client: validation, caching, error handling
   hooks/useCloudEval.ts   debounced, cancellable analysis requests
+  urlPosition.ts          position ↔ URL hash, for reload, sharing and back/forward
   components/             Board, EngineLines, EditorPanel, FenPanel
 ```
 
